@@ -1,0 +1,21 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* One place for the brand colours, so a rethemed UI is a change here and nowhere else. */
+@theme {
+  --color-brand-50: oklch(0.97 0.02 250);
+  --color-brand-100: oklch(0.94 0.04 250);
+  --color-brand-500: oklch(0.62 0.18 255);
+  --color-brand-600: oklch(0.55 0.19 255);
+  --color-brand-700: oklch(0.48 0.18 255);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
