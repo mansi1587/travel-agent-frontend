@@ -6,7 +6,7 @@ import { useAppDispatch } from '@/app/hooks'
 import { Button } from '@/components/ui/Button'
 import { useSession } from '@/features/auth/useSession'
 import { ChatWidget } from '@/features/chat/ChatWidget'
-import { panelToggled } from '@/features/chat/chatUiSlice'
+import { newConversationStarted } from '@/features/chat/chatUiSlice'
 import { toUserMessage } from '@/lib/errors'
 
 const CAPABILITIES = [
@@ -73,7 +73,7 @@ export function WelcomePage() {
           ))}
         </div>
 
-        <Button className="mt-10" onClick={() => dispatch(panelToggled())}>
+        <Button className="mt-10" onClick={() => dispatch(newConversationStarted())}>
           <MessageCircle className="size-4" />
           Start a conversation
         </Button>

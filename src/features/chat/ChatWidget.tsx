@@ -3,13 +3,26 @@ import { useEffect } from 'react'
 
 import { useAppDispatch, useAppSelector } from '@/app/hooks'
 import { ChatPanel } from '@/features/chat/ChatPanel'
-import { panelClosed, panelToggled } from '@/features/chat/chatUiSlice'
+import {
+  panelClosed,
+  panelToggled,
+  persistConversationId,
+} from '@/features/chat/chatUiSlice'
 import { cn } from '@/lib/cn'
 
 /** The floating launcher, plus the panel it opens. */
 export function ChatWidget() {
   const dispatch = useAppDispatch()
   const isOpen = useAppSelector((state) => state.chatUi.isPanelOpen)
+  const activeConversationId = useAppSelector(
+    (state) => state.chatUi.activeConversationId,
+  )
+
+  // Remember which conversation was open so a page refresh resumes it. Done here
+  // rather than inside the reducer, which must stay a pure function of its inputs.
+  useEffect(() => {
+    persistConversationId(activeConversationId)
+  }, [activeConversationId])
 
   // Escape closes the panel — expected of anything that overlays the page.
   useEffect(() => {
@@ -28,10 +41,12 @@ export function ChatWidget() {
           role="dialog"
           aria-label="Travel assistant chat"
           className={cn(
-            'fixed z-40',
+            'animate-panel-in fixed z-40',
             // Full screen on a phone; a panel in the corner from sm upwards.
             'inset-0 sm:inset-auto sm:right-6 sm:bottom-24',
-            'sm:h-[min(600px,calc(100vh-8rem))] sm:w-[400px]',
+            // Height stops short of the top so the page header — and its Sign out
+            // button — stays reachable while the chat is open.
+            'sm:h-[min(560px,calc(100vh-11rem))] sm:w-[400px]',
           )}
         >
           <ChatPanel />

@@ -11,8 +11,15 @@ export const chatApi = baseApi.injectEndpoints({
     ask: builder.mutation<AskResponse, AskRequest>({
       query: (body) => ({ url: '/chat/ask', method: 'POST', data: body }),
       // A question either creates a conversation or bumps its last_message_at, so the
-      // sidebar's ordering is stale either way.
-      invalidatesTags: [{ type: 'Conversation', id: 'LIST' }],
+      // list's ordering is stale either way. The conversation itself is invalidated
+      // too, so reopening it later shows the exchange that just happened.
+      invalidatesTags: (result) =>
+        result
+          ? [
+              { type: 'Conversation', id: result.conversation_id },
+              { type: 'Conversation', id: 'LIST' },
+            ]
+          : [{ type: 'Conversation', id: 'LIST' }],
     }),
 
     conversations: builder.query<Conversation[], void>({
