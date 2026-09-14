@@ -1,8 +1,9 @@
 import { AlertCircle } from 'lucide-react'
 import Markdown from 'react-markdown'
 
+import { MessageAttachments } from '@/features/chat/Attachments'
 import { cn } from '@/lib/cn'
-import type { MessageRole } from '@/types/api'
+import type { Attachment, MessageRole } from '@/types/api'
 
 export interface ChatMessageData {
   id: string
@@ -10,13 +11,30 @@ export interface ChatMessageData {
   content: string
   /** Rendered as a warning rather than an answer. */
   isError?: boolean
+  /** Still arriving token by token; shows a cursor at the end. */
+  isStreaming?: boolean
+  /** Flight cards or cited sources, shown under the answer. */
+  attachments?: Attachment[]
 }
 
-export function ChatMessage({ role, content, isError }: ChatMessageData) {
+// Appended to the Markdown source rather than rendered after it, so it sits at the end
+// of the last line of text instead of dropping onto a line of its own.
+const STREAMING_CURSOR = '▍'
+
+export function ChatMessage({
+  role,
+  content,
+  isError,
+  isStreaming,
+  attachments,
+}: ChatMessageData) {
   const isUser = role === 'user'
+  const shownAttachments = isUser || isError ? [] : (attachments ?? [])
 
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    // A column rather than a row, so cards and sources sit under the bubble they
+    // belong to, aligned to the same side.
+    <div className={cn('flex flex-col gap-2', isUser ? 'items-end' : 'items-start')}>
       <div
         className={cn(
           'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm',
@@ -45,29 +63,12 @@ export function ChatMessage({ role, content, isError }: ChatMessageData) {
               'prose-strong:text-slate-900 prose-strong:font-semibold',
             )}
           >
-            <Markdown>{content}</Markdown>
+            <Markdown>{isStreaming ? content + STREAMING_CURSOR : content}</Markdown>
           </div>
         )}
       </div>
+      {shownAttachments.length > 0 && <MessageAttachments items={shownAttachments} />}
     </div>
   )
 }
 
-/** Shown while the agent works — it calls tools, so replies take 5-15 seconds. */
-export function TypingIndicator() {
-  return (
-    <div className="flex justify-start">
-      <div className="rounded-2xl bg-white px-4 py-3 ring-1 ring-slate-200">
-        <div className="flex gap-1" role="status" aria-label="Assistant is typing">
-          {[0, 150, 300].map((delay) => (
-            <span
-              key={delay}
-              className="size-2 animate-bounce rounded-full bg-slate-400"
-              style={{ animationDelay: `${delay}ms` }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}

@@ -2,20 +2,19 @@ import { skipToken } from '@reduxjs/toolkit/query'
 import { ArrowLeft, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import { useAskMutation, useConversationQuery } from '@/api/chatApi'
+import { useConversationQuery } from '@/api/chatApi'
 import { useAppDispatch, useAppSelector } from '@/app/hooks'
 import { Spinner } from '@/components/ui/Spinner'
+import { AgentProgress } from '@/features/chat/AgentProgress'
+import { MessageAttachments } from '@/features/chat/Attachments'
 import { ChatComposer } from '@/features/chat/ChatComposer'
-import {
-  ChatMessage,
-  TypingIndicator,
-  type ChatMessageData,
-} from '@/features/chat/ChatMessage'
+import { ChatMessage, type ChatMessageData } from '@/features/chat/ChatMessage'
 import {
   conversationIdAssigned,
   listOpened,
   panelClosed,
 } from '@/features/chat/chatUiSlice'
+import { useStreamingAsk } from '@/features/chat/useStreamingAsk'
 import { toUserMessage } from '@/lib/errors'
 
 const SUGGESTIONS = [
@@ -27,7 +26,12 @@ const SUGGESTIONS = [
 export function ConversationView() {
   const dispatch = useAppDispatch()
   const conversationId = useAppSelector((state) => state.chatUi.activeConversationId)
-  const [ask, { isLoading: isSending }] = useAskMutation()
+  const {
+    send: streamAsk,
+    isSending,
+    steps,
+    attachments: earlyAttachments,
+  } = useStreamingAsk()
 
   const [messages, setMessages] = useState<ChatMessageData[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -49,46 +53,85 @@ export function ConversationView() {
         id: `${stored.id}-${index}`,
         role: message.role,
         content: message.content,
+        attachments: message.attachments,
       })),
     )
   }, [stored])
 
-  // Follow the newest message, including the typing indicator appearing.
+  const isStreamingReply = messages.some((message) => message.isStreaming)
+
+  // Follow the newest content: each token, each progress step, each early result.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isSending])
+    bottomRef.current?.scrollIntoView({
+      block: 'end',
+      // Instant while tokens arrive — a smooth scroll per token queues up and lags
+      // visibly behind the text.
+      behavior: isStreamingReply ? 'auto' : 'smooth',
+    })
+  }, [messages, isSending, steps, earlyAttachments, isStreamingReply])
 
   const send = async (question: string) => {
     const sentAt = Date.now()
+    const replyId = `assistant-${sentAt}`
     setMessages((current) => [
       ...current,
       { id: `user-${sentAt}`, role: 'user', content: question },
     ])
 
-    try {
-      const result = await ask({
-        question,
-        // Omitted on the first question, which is how the backend knows to start a
-        // new conversation and mint an id.
-        ...(conversationId ? { conversation_id: conversationId } : {}),
-      }).unwrap()
+    // Create the reply bubble on the first token, then grow it in place. Until then
+    // the progress list is shown instead of an empty bubble.
+    const updateReply = (update: (reply: ChatMessageData) => ChatMessageData) =>
+      setMessages((current) => {
+        const index = current.findIndex((message) => message.id === replyId)
+        if (index === -1) {
+          return [
+            ...current,
+            update({ id: replyId, role: 'assistant', content: '', isStreaming: true }),
+          ]
+        }
+        const next = [...current]
+        next[index] = update(next[index]!)
+        return next
+      })
 
-      setMessages((current) => [
-        ...current,
-        { id: `assistant-${Date.now()}`, role: 'assistant', content: result.answer },
-      ])
+    try {
+      const result = await streamAsk(
+        {
+          question,
+          // Omitted on the first question, which is how the backend knows to start a
+          // new conversation and mint an id.
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+        },
+        {
+          onToken: (delta) =>
+            updateReply((reply) => ({ ...reply, content: reply.content + delta })),
+          onReset: () =>
+            setMessages((current) => current.filter((message) => message.id !== replyId)),
+        },
+      )
+
+      // The server's `answer` is authoritative: it is exactly the text after the last
+      // tool call, which is what gets saved to the conversation. The early results move
+      // onto the reply here, which is where they come back when the chat is reopened.
+      updateReply((reply) => ({
+        ...reply,
+        content: result.answer || reply.content,
+        isStreaming: false,
+        attachments: result.attachments.length > 0 ? result.attachments : undefined,
+      }))
 
       if (!conversationId) {
-        // Claim the new id before its history arrives, so the effect above treats
-        // this conversation as already loaded and leaves the messages alone.
+        // Claim the new id before its history arrives, so the effect above treats this
+        // conversation as already loaded and leaves the messages alone.
         loadedIdRef.current = result.conversation_id
         dispatch(conversationIdAssigned(result.conversation_id))
       }
     } catch (error) {
-      // Shown in the conversation rather than only as a toast: a question that
-      // silently produced nothing is worse than one that visibly failed.
+      // A reply cut off mid-sentence is removed rather than left looking complete, and
+      // the failure is shown in the conversation — a question that silently produced
+      // nothing is worse than one that visibly failed.
       setMessages((current) => [
-        ...current,
+        ...current.filter((message) => message.id !== replyId),
         {
           id: `error-${Date.now()}`,
           role: 'assistant',
@@ -155,7 +198,16 @@ export function ConversationView() {
           messages.map((message) => <ChatMessage key={message.id} {...message} />)
         )}
 
-        {isSending && <TypingIndicator />}
+        {/* Shown for the whole wait, and replaced by the reply once it starts. */}
+        {isSending && !isStreamingReply && <AgentProgress steps={steps} />}
+
+        {/* Results that arrived before the answer — flight cards are ready several
+            seconds before Gemini has finished writing about them. */}
+        {isSending && earlyAttachments.length > 0 && (
+          <div className="flex justify-start">
+            <MessageAttachments items={earlyAttachments} />
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 

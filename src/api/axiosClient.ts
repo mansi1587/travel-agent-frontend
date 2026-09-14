@@ -29,6 +29,14 @@ export function setUnauthorizedHandler(handler: () => void): void {
   onUnauthorized = handler
 }
 
+/**
+ * Trigger the same login redirect the interceptor uses, for requests that do not go
+ * through axios — the streaming chat call, which has to use fetch.
+ */
+export function notifyUnauthorized(): void {
+  onUnauthorized?.()
+}
+
 function extractDetail(error: AxiosError<{ detail?: unknown }>): string {
   const detail = error.response?.data?.detail
 
